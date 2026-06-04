@@ -1,0 +1,30 @@
+axiom-estimate/
+├── scripts/
+│   └── gke_deploy.sh                    # Script maestro de instalación
+├── k8s/
+│   ├── namespace.yaml
+│   ├── secrets/
+│   │   └── axiom-secrets.yaml
+│   ├── configmaps/
+│   │   └── axiom-config.yaml
+│   ├── deployments/
+│   │   ├── api-gateway.yaml
+│   │   ├── office1-estimator.yaml
+│   │   ├── office2-insurance.yaml
+│   │   ├── office3-totalloss.yaml
+│   │   ├── office4-lien.yaml
+│   │   ├── office5-audit.yaml
+│   │   ├── office6-cpo.yaml
+│   │   └── office7-gpu.yaml
+│   ├── services/
+│   │   └── axiom-services.yaml
+│   ├── ingress/
+│   │   └── axiom-ingress.yaml
+│   ├── hpa/
+│   │   └── axiom-hpa.yaml
+│   ├── cronjobs/
+│   │   └── reporting-agent.yaml
+│   └── monitoring/
+│       └── axiom-monitoring.yaml
+└── terraform/
+    └── gke-autopilot.tf                 # Infraestructura como código

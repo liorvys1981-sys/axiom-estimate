@@ -1,0 +1,121 @@
+# k8s/cronjobs/reporting-agent.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: axiom-reporting-agent
+  namespace: axiom-production
+  labels:
+    app: reporting-agent
+    component: automation
+spec:
+  # Ejecutar cada 24 horas a las 6:00 AM UTC (2 AM EST)
+  schedule: "0 6 * * *"
+  timeZone: "America/New_York"
+  concurrencyPolicy: Forbid        # Nunca ejecutar dos a la vez
+  successfulJobsHistoryLimit: 7    # Guardar últimos 7 días
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 3600    # 1 hora de gracia
+
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: reporting-agent
+        spec:
+          serviceAccountName: axiom-service-account
+          restartPolicy: OnFailure
+
+          containers:
+            - name: reporting-agent
+              image: us-east1-docker.pkg.dev/axiom-estimate-prod/axiom/reporting-agent:latest
+              imagePullPolicy: Always
+
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "256Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
+
+              envFrom:
+                - configMapRef:
+                    name: axiom-global-config
+                - secretRef:
+                    name: axiom-runtime-secrets
+
+              env:
+                - name: REPORT_TYPE
+                  value: "daily_executive"
+                - name: REPORT_FORMAT
+                  value: "html"
+                - name: RECIPIENT_EMAIL
+                  value: "liorvys1981@gmail.com"
+                - name: REPORT_TIMEZONE
+                  value: "America/New_York"
+                - name: INCLUDE_FINANCIALS
+                  value: "true"
+                - name: INCLUDE_OFFICE_STATS
+                  value: "true"
+                - name: INCLUDE_HEALTH_STATUS
+                  value: "true"
+
+              volumeMounts:
+                - name: tmp-dir
+                  mountPath: /tmp
+
+          volumes:
+            - name: tmp-dir
+              emptyDir: {}
+---
+# CronJob: Guardian Health Check (cada 5 minutos)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: axiom-guardian-healthcheck
+  namespace: axiom-production
+  labels:
+    app: guardian
+    component: self-healing
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: axiom-service-account
+          restartPolicy: OnFailure
+
+          containers:
+            - name: guardian
+              image: us-east1-docker.pkg.dev/axiom-estimate-prod/axiom/guardian:latest
+              imagePullPolicy: Always
+
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "200m"
+                  memory: "256Mi"
+
+              envFrom:
+                - configMapRef:
+                    name: axiom-global-config
+                - secretRef:
+                    name: axiom-runtime-secrets
+
+              env:
+                - name: GUARDIAN_MODE
+                  value: "healthcheck"
+                - name: NAMESPACE
+                  value: "axiom-production"
+                - name: HEALING_TIMEOUT
+                  value: "20"
+                - name: ALERT_EMAIL
+                  value: "liorvys1981@gmail.com"

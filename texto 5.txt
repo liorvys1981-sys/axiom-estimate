@@ -1,0 +1,79 @@
+# k8s/secrets/axiom-secrets.yaml
+# NOTA: En GKE Autopilot usamos Workload Identity + Secret Manager
+# Este archivo contiene SOLO referencias, nunca valores reales
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: axiom-placeholder-secret
+  namespace: axiom-production
+  annotations:
+    # Indica que el valor real viene de Google Secret Manager
+    secret-manager/managed: "true"
+type: Opaque
+stringData:
+  # Estos son PLACEHOLDERS — los valores reales están en Secret Manager
+  # El init-container los inyecta en runtime
+  DATABASE_URL: "INJECTED_BY_SECRET_MANAGER"
+  JWT_SECRET_KEY: "INJECTED_BY_SECRET_MANAGER"
+  STRIPE_SECRET_KEY: "INJECTED_BY_SECRET_MANAGER"
+  OPENAI_API_KEY: "INJECTED_BY_SECRET_MANAGER"
+  REDIS_URL: "INJECTED_BY_SECRET_MANAGER"
+  SMTP_PASSWORD: "INJECTED_BY_SECRET_MANAGER"
+---
+# ExternalSecret usando Workload Identity
+# (Requiere External Secrets Operator instalado)
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: axiom-gcp-secret-store
+  namespace: axiom-production
+spec:
+  provider:
+    gcpsm:
+      projectID: axiom-estimate-prod
+      auth:
+        workloadIdentity:
+          clusterLocation: us-east1
+          clusterName: axiom-autopilot-prod
+          serviceAccountRef:
+            name: axiom-service-account
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: axiom-external-secrets
+  namespace: axiom-production
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: axiom-gcp-secret-store
+    kind: SecretStore
+  target:
+    name: axiom-runtime-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: DATABASE_URL
+      remoteRef:
+        key: axiom-database-url
+    - secretKey: JWT_SECRET_KEY
+      remoteRef:
+        key: axiom-jwt-secret
+    - secretKey: STRIPE_SECRET_KEY
+      remoteRef:
+        key: axiom-stripe-secret-key
+    - secretKey: OPENAI_API_KEY
+      remoteRef:
+        key: axiom-openai-api-key
+    - secretKey: REDIS_URL
+      remoteRef:
+        key: axiom-redis-url
+    - secretKey: SMTP_PASSWORD
+      remoteRef:
+        key: axiom-smtp-password
+    - secretKey: LANGCHAIN_API_KEY
+      remoteRef:
+        key: axiom-langchain-api-key
+    - secretKey: STRIPE_WEBHOOK_SECRET
+      remoteRef:
+        key: axiom-stripe-webhook-secret

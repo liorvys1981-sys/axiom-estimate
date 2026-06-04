@@ -1,0 +1,108 @@
+# k8s/services/axiom-services.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway-service
+  namespace: axiom-production
+  labels:
+    app: api-gateway
+spec:
+  selector:
+    app: api-gateway
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: office1-estimator-service
+  namespace: axiom-production
+spec:
+  selector:
+    app: office1-estimator
+  ports:
+    - port: 8001
+      targetPort: 8001
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: office2-insurance-service
+  namespace: axiom-production
+spec:
+  selector:
+    app: office2-insurance
+  ports:
+    - port: 8002
+      targetPort: 8002
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: office3-totalloss-service
+  namespace: axiom-production
+spec:
+  selector:
+    app: office3-totalloss
+  ports:
+    - port: 8003
+      targetPort: 8003
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: office4-lien-service
+  namespace: axiom-production
+spec:
+  selector:
+    app: office4-lien
+  ports:
+    - port: 8004
+      targetPort: 8004
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: office5-audit-service
+  namespace: axiom-production
+spec:
+  selector:
+    app: office5-audit
+  ports:
+    - port: 8005
+      targetPort: 8005
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: office6-cpo-service
+  namespace: axiom-production
+spec:
+  selector:
+    app: office6-cpo
+  ports:
+    - port: 8006
+      targetPort: 8006
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: office7-gpu-service
+  namespace: axiom-production
+spec:
+  selector:
+    app: office7-gpu
+  ports:
+    - port: 8007
+      targetPort: 8007
+  type: ClusterIP

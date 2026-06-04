@@ -1,0 +1,70 @@
+# k8s/configmaps/axiom-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: axiom-global-config
+  namespace: axiom-production
+  labels:
+    app: axiom-estimate
+data:
+  # ── Configuración de la Aplicación ──────────────────
+  APP_NAME: "AXIOM ESTIMATE"
+  APP_VERSION: "2.0.0"
+  APP_ENV: "production"
+  LOG_LEVEL: "INFO"
+
+  # ── URLs de Servicios Internos ───────────────────────
+  API_GATEWAY_URL: "http://api-gateway-service:8000"
+  OFFICE1_URL: "http://office1-estimator-service:8001"
+  OFFICE2_URL: "http://office2-insurance-service:8002"
+  OFFICE3_URL: "http://office3-totalloss-service:8003"
+  OFFICE4_URL: "http://office4-lien-service:8004"
+  OFFICE5_URL: "http://office5-audit-service:8005"
+  OFFICE6_URL: "http://office6-cpo-service:8006"
+  OFFICE7_URL: "http://office7-gpu-service:8007"
+
+  # ── Pricing (USD) ────────────────────────────────────
+  BASE_SUBSCRIPTION_PRICE: "99.00"
+  OFFICE1_JOB_PRICE: "9.00"
+  OFFICE2_JOB_PRICE: "13.00"
+  OFFICE3_JOB_PRICE: "26.00"
+  OFFICE4_FILING_PRICE: "64.00"
+  OFFICE5_JOB_PRICE: "8.00"
+  OFFICE6_JOB_PRICE: "17.00"
+  OFFICE7_REVENUE_SHARE_PCT: "0.30"
+
+  # ── Email Institucional ──────────────────────────────
+  OWNER_EMAIL: "owner@axiomestimate.com"
+  SUPPORT_EMAIL: "support@axiomestimate.com"
+  BILLING_EMAIL: "billing@axiomestimate.com"
+  NOREPLY_EMAIL: "noreply@axiomestimate.com"
+  SECURITY_EMAIL: "security@axiomestimate.com"
+  CLAIMS_EMAIL: "claims@axiomestimate.com"
+  MASTER_INBOX: "liorvys1981@gmail.com"
+  SMTP_HOST: "smtp.gmail.com"
+  SMTP_PORT: "587"
+  SMTP_USE_TLS: "true"
+
+  # ── Florida Legal ────────────────────────────────────
+  FL_TOTAL_LOSS_THRESHOLD: "0.80"
+  FL_STATUTE_TOTAL_LOSS: "319.30"
+  FL_STATUTE_LIEN_REPAIR: "713.58"
+  FL_STATUTE_LIEN_TOW: "713.78"
+  DEFAULT_STATE: "FL"
+
+  # ── Performance SLAs ────────────────────────────────
+  SELF_HEALING_TIMEOUT_SECONDS: "20"
+  REPORT_INTERVAL_HOURS: "24"
+  TARGET_AUTONOMY_PCT: "99.9"
+  HEALTH_CHECK_INTERVAL_SECONDS: "30"
+
+  # ── Guardian Config ──────────────────────────────────
+  GUARDIAN_ENABLED: "true"
+  GUARDIAN_MAX_RESTARTS: "5"
+  GUARDIAN_RESTART_WINDOW_MINUTES: "10"
+  GUARDIAN_ALERT_THRESHOLD: "3"
+
+  # ── GKE Autopilot ───────────────────────────────────
+  CLOUD_PROVIDER: "gcp"
+  GCP_REGION: "us-east1"
+  K8S_NAMESPACE: "axiom-production"

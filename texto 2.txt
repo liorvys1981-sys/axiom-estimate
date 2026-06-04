@@ -1,0 +1,562 @@
+#!/bin/bash
+# scripts/gke_deploy.sh
+# AXIOM ESTIMATE — GKE Autopilot Master Deployment Script
+# Versión: 2.0.0 | Producción | 100+ Clientes
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# ════════════════════════════════════════════════════════
+# CONFIGURACIÓN GLOBAL
+# ════════════════════════════════════════════════════════
+
+# INSTRUCCIÓN: Reemplaza estos valores con los tuyos reales
+PROJECT_ID="axiom-estimate-prod"          # Tu Google Cloud Project ID
+REGION="us-east1"                         # Florida/East Coast — menor latencia
+CLUSTER_NAME="axiom-autopilot-prod"
+NAMESPACE="axiom-production"
+ARTIFACT_REGISTRY="us-east1-docker.pkg.dev"
+REGISTRY_REPO="${ARTIFACT_REGISTRY}/${PROJECT_ID}/axiom"
+
+# Colores para output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# ════════════════════════════════════════════════════════
+# FUNCIONES DE UTILIDAD
+# ════════════════════════════════════════════════════════
+
+log_info()    { echo -e "${BLUE}[INFO]${NC}    $1"; }
+log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+log_error()   { echo -e "${RED}[ERROR]${NC}   $1"; exit 1; }
+log_step()    { echo -e "\n${CYAN}══════════════════════════════════════${NC}"; \
+                echo -e "${CYAN}  PASO $1${NC}"; \
+                echo -e "${CYAN}══════════════════════════════════════${NC}"; }
+
+check_prerequisites() {
+    log_step "0/10 — Verificando Prerequisites"
+
+    local tools=("gcloud" "kubectl" "helm" "terraform" "docker" "jq")
+    for tool in "${tools[@]}"; do
+        if command -v "$tool" &>/dev/null; then
+            log_success "$tool instalado: $(command -v $tool)"
+        else
+            log_error "$tool no encontrado. Instálalo antes de continuar."
+        fi
+    done
+
+    # Verificar autenticación GCP
+    if gcloud auth list --filter=status:ACTIVE --format="value(account)" | grep -q "@"; then
+        log_success "GCP Auth activo: $(gcloud auth list \
+            --filter=status:ACTIVE \
+            --format='value(account)' | head -1)"
+    else
+        log_error "No autenticado en GCP. Ejecuta: gcloud auth login"
+    fi
+
+    # Verificar .env existe
+    if [[ ! -f ".env" ]]; then
+        log_error ".env no encontrado. Ejecuta primero: python3 scripts/setup_credentials.py"
+    fi
+
+    log_success "Todos los prerequisites verificados."
+}
+
+load_env() {
+    log_info "Cargando variables de entorno desde .env..."
+    set -a
+    source .env
+    set +a
+    log_success ".env cargado correctamente."
+}
+
+# ════════════════════════════════════════════════════════
+# PASO 1: CONFIGURAR GOOGLE CLOUD PROJECT
+# ════════════════════════════════════════════════════════
+
+setup_gcp_project() {
+    log_step "1/10 — Configurando Google Cloud Project"
+
+    gcloud config set project "${PROJECT_ID}"
+    gcloud config set compute/region "${REGION}"
+
+    # Habilitar APIs necesarias
+    log_info "Habilitando APIs de Google Cloud (esto toma ~2 minutos)..."
+
+    local apis=(
+        "container.googleapis.com"          # GKE
+        "artifactregistry.googleapis.com"   # Docker Registry
+        "secretmanager.googleapis.com"      # Secret Manager
+        "monitoring.googleapis.com"         # Cloud Monitoring
+        "logging.googleapis.com"            # Cloud Logging
+        "cloudtrace.googleapis.com"         # Distributed Tracing
+        "sqladmin.googleapis.com"           # Cloud SQL
+        "redis.googleapis.com"              # Memorystore Redis
+        "compute.googleapis.com"            # Compute Engine
+        "iamcredentials.googleapis.com"     # IAM
+        "servicenetworking.googleapis.com"  # VPC Peering
+    )
+
+    gcloud services enable "${apis[@]}" --quiet
+
+    log_success "APIs habilitadas correctamente."
+}
+
+# ════════════════════════════════════════════════════════
+# PASO 2: CREAR CLUSTER GKE AUTOPILOT
+# ════════════════════════════════════════════════════════
+
+create_gke_cluster() {
+    log_step "2/10 — Creando Cluster GKE Autopilot"
+
+    # Verificar si el cluster ya existe
+    if gcloud container clusters describe "${CLUSTER_NAME}" \
+        --region="${REGION}" &>/dev/null 2>&1; then
+        log_warning "Cluster ${CLUSTER_NAME} ya existe. Saltando creación."
+    else
+        log_info "Creando cluster GKE Autopilot (esto toma ~5 minutos)..."
+
+        gcloud container clusters create-auto "${CLUSTER_NAME}" \
+            --region="${REGION}" \
+            --release-channel="stable" \
+            --network="default" \
+            --subnetwork="default" \
+            --enable-master-authorized-networks \
+            --master-authorized-networks="0.0.0.0/0" \
+            --security-posture="standard" \
+            --workload-vulnerability-scanning="standard" \
+            --enable-fleet \
+            --labels="env=production,app=axiom-estimate,owner=axiom" \
+            --quiet
+
+        log_success "Cluster GKE Autopilot creado: ${CLUSTER_NAME}"
+    fi
+
+    # Obtener credenciales
+    gcloud container clusters get-credentials "${CLUSTER_NAME}" \
+        --region="${REGION}" \
+        --project="${PROJECT_ID}"
+
+    log_success "kubectl configurado para ${CLUSTER_NAME}"
+}
+
+# ════════════════════════════════════════════════════════
+# PASO 3: ARTIFACT REGISTRY
+# ════════════════════════════════════════════════════════
+
+setup_artifact_registry() {
+    log_step "3/10 — Configurando Artifact Registry"
+
+    # Crear repositorio si no existe
+    if ! gcloud artifacts repositories describe axiom \
+        --location="${REGION}" &>/dev/null 2>&1; then
+
+        gcloud artifacts repositories create axiom \
+            --repository-format="docker" \
+            --location="${REGION}" \
+            --description="AXIOM ESTIMATE Docker Images" \
+            --quiet
+
+        log_success "Artifact Registry creado: axiom"
+    else
+        log_warning "Artifact Registry 'axiom' ya existe."
+    fi
+
+    # Autenticar Docker con Artifact Registry
+    gcloud auth configure-docker "${ARTIFACT_REGISTRY}" --quiet
+    log_success "Docker autenticado con Artifact Registry."
+}
+
+# ════════════════════════════════════════════════════════
+# PASO 4: BUILD Y PUSH DE IMÁGENES DOCKER
+# ════════════════════════════════════════════════════════
+
+build_and_push_images() {
+    log_step "4/10 — Build y Push de Imágenes Docker"
+
+    local services=(
+        "api-gateway"
+        "office1-estimator"
+        "office2-insurance"
+        "office3-totalloss"
+        "office4-lien"
+        "office5-audit"
+        "office6-cpo"
+        "office7-gpu"
+        "guardian"
+        "reporting-agent"
+    )
+
+    local VERSION
+    VERSION=$(date +%Y%m%d-%H%M%S)
+
+    for service in "${services[@]}"; do
+        local image_path="${REGISTRY_REPO}/${service}:${VERSION}"
+        local dockerfile_path="services/${service}/Dockerfile"
+
+        if [[ -f "${dockerfile_path}" ]]; then
+            log_info "Building ${service}..."
+
+            # Build con Cloud Build para mayor velocidad
+            gcloud builds submit \
+                --tag="${image_path}" \
+                --dockerfile="${dockerfile_path}" \
+                "services/${service}/" \
+                --quiet
+
+            # También taggear como latest
+            gcloud artifacts docker tags add \
+                "${image_path}" \
+                "${REGISTRY_REPO}/${service}:latest" \
+                --quiet
+
+            log_success "✓ ${service}:${VERSION}"
+        else
+            log_warning "Dockerfile no encontrado para ${service}. Usando imagen base."
+        fi
+    done
+
+    # Guardar versión para uso posterior
+    echo "${VERSION}" > .deploy_version
+    log_success "Todas las imágenes publicadas. Versión: ${VERSION}"
+}
+
+# ════════════════════════════════════════════════════════
+# PASO 5: GOOGLE SECRET MANAGER
+# ════════════════════════════════════════════════════════
+
+setup_secret_manager() {
+    log_step "5/10 — Configurando Google Secret Manager"
+
+    # Función para crear/actualizar secret
+    create_secret() {
+        local secret_name="$1"
+        local secret_value="$2"
+
+        if gcloud secrets describe "${secret_name}" &>/dev/null 2>&1; then
+            # Actualizar versión existente
+            echo -n "${secret_value}" | \
+                gcloud secrets versions add "${secret_name}" --data-file=- --quiet
+            log_info "Secret actualizado: ${secret_name}"
+        else
+            # Crear nuevo secret
+            echo -n "${secret_value}" | \
+                gcloud secrets create "${secret_name}" \
+                --data-file=- \
+                --replication-policy="automatic" \
+                --quiet
+            log_success "Secret creado: ${secret_name}"
+        fi
+    }
+
+    # Cargar secretos desde .env a Secret Manager
+    create_secret "axiom-stripe-secret-key"      "${STRIPE_SECRET_KEY}"
+    create_secret "axiom-database-url"           "${DATABASE_URL}"
+    create_secret "axiom-jwt-secret"             "${JWT_SECRET_KEY}"
+    create_secret "axiom-openai-api-key"         "${OPENAI_API_KEY}"
+    create_secret "axiom-redis-url"              "${REDIS_URL}"
+    create_secret "axiom-smtp-password"          "${SMTP_PASSWORD}"
+    create_secret "axiom-langchain-api-key"      "${LANGCHAIN_API_KEY}"
+    create_secret "axiom-stripe-webhook-secret"  "${STRIPE_WEBHOOK_SECRET}"
+
+    log_success "Todos los secretos migrados a Google Secret Manager."
+}
+
+# ════════════════════════════════════════════════════════
+# PASO 6: APLICAR MANIFIESTOS KUBERNETES
+# ════════════════════════════════════════════════════════
+
+apply_kubernetes_manifests() {
+    log_step "6/10 — Aplicando Manifiestos Kubernetes"
+
+    # Aplicar en orden correcto
+    local manifest_order=(
+        "k8s/namespace.yaml"
+        "k8s/secrets/axiom-secrets.yaml"
+        "k8s/configmaps/axiom-config.yaml"
+        "k8s/services/axiom-services.yaml"
+        "k8s/deployments/api-gateway.yaml"
+        "k8s/deployments/office1-estimator.yaml"
+        "k8s/deployments/office2-insurance.yaml"
+        "k8s/deployments/office3-totalloss.yaml"
+        "k8s/deployments/office4-lien.yaml"
+        "k8s/deployments/office5-audit.yaml"
+        "k8s/deployments/office6-cpo.yaml"
+        "k8s/deployments/office7-gpu.yaml"
+        "k8s/hpa/axiom-hpa.yaml"
+        "k8s/ingress/axiom-ingress.yaml"
+        "k8s/cronjobs/reporting-agent.yaml"
+        "k8s/monitoring/axiom-monitoring.yaml"
+    )
+
+    for manifest in "${manifest_order[@]}"; do
+        if [[ -f "${manifest}" ]]; then
+            kubectl apply -f "${manifest}" --namespace="${NAMESPACE}" 2>/dev/null || \
+            kubectl apply -f "${manifest}"
+            log_success "Aplicado: ${manifest}"
+        else
+            log_warning "Manifiesto no encontrado: ${manifest}"
+        fi
+    done
+
+    log_success "Todos los manifiestos aplicados."
+}
+
+# ════════════════════════════════════════════════════════
+# PASO 7: INSTALAR HELM CHARTS
+# ════════════════════════════════════════════════════════
+
+install_helm_charts() {
+    log_step "7/10 — Instalando Helm Charts"
+
+    # Agregar repositorios Helm
+    helm repo add ingress-nginx \
+        https://kubernetes.github.io/ingress-nginx --force-update
+    helm repo add cert-manager \
+        https://charts.jetstack.io --force-update
+    helm repo add prometheus-community \
+        https://prometheus-community.github.io/helm-charts --force-update
+    helm repo update
+
+    # Instalar NGINX Ingress Controller
+    log_info "Instalando NGINX Ingress Controller..."
+    helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+        --namespace ingress-nginx \
+        --create-namespace \
+        --set controller.service.type=LoadBalancer \
+        --set controller.replicaCount=2 \
+        --set controller.resources.requests.cpu=100m \
+        --set controller.resources.requests.memory=128Mi \
+        --wait --timeout=300s
+
+    log_success "NGINX Ingress instalado."
+
+    # Instalar Cert-Manager para TLS automático
+    log_info "Instalando Cert-Manager (TLS automático)..."
+    helm upgrade --install cert-manager cert-manager/cert-manager \
+        --namespace cert-manager \
+        --create-namespace \
+        --set installCRDs=true \
+        --set global.leaderElection.namespace=cert-manager \
+        --wait --timeout=300s
+
+    log_success "Cert-Manager instalado."
+
+    # Instalar Prometheus + Grafana
+    log_info "Instalando Prometheus Stack (Monitoring)..."
+    helm upgrade --install prometheus-stack \
+        prometheus-community/kube-prometheus-stack \
+        --namespace monitoring \
+        --create-namespace \
+        --set grafana.adminPassword="${GRAFANA_ADMIN_PASSWORD:-axiom-grafana-2026}" \
+        --set prometheus.prometheusSpec.retention=30d \
+        --wait --timeout=600s
+
+    log_success "Stack de Monitoring instalado."
+}
+
+# ════════════════════════════════════════════════════════
+# PASO 8: CONFIGURAR CLOUD SQL Y REDIS
+# ════════════════════════════════════════════════════════
+
+setup_managed_databases() {
+    log_step "8/10 — Configurando Bases de Datos Administradas"
+
+    local SQL_INSTANCE="axiom-postgres-prod"
+    local REDIS_INSTANCE="axiom-redis-prod"
+
+    # Cloud SQL PostgreSQL
+    if ! gcloud sql instances describe "${SQL_INSTANCE}" &>/dev/null 2>&1; then
+        log_info "Creando Cloud SQL PostgreSQL (esto toma ~5 minutos)..."
+
+        gcloud sql instances create "${SQL_INSTANCE}" \
+            --database-version="POSTGRES_15" \
+            --tier="db-g1-small" \
+            --region="${REGION}" \
+            --storage-type="SSD" \
+            --storage-size="20GB" \
+            --storage-auto-increase \
+            --backup-start-time="03:00" \
+            --enable-point-in-time-recovery \
+            --deletion-protection \
+            --insights-config-query-insights-enabled \
+            --quiet
+
+        # Crear base de datos y usuario
+        gcloud sql databases create axiom_production \
+            --instance="${SQL_INSTANCE}" --quiet
+
+        local DB_PASSWORD
+        DB_PASSWORD=$(python3 -c "import secrets,string; \
+            print(secrets.token_urlsafe(32))")
+
+        gcloud sql users create axiom_user \
+            --instance="${SQL_INSTANCE}" \
+            --password="${DB_PASSWORD}" --quiet
+
+        # Guardar password en Secret Manager
+        echo -n "${DB_PASSWORD}" | \
+            gcloud secrets create axiom-db-password \
+            --data-file=- --quiet
+
+        log_success "Cloud SQL PostgreSQL creado: ${SQL_INSTANCE}"
+    else
+        log_warning "Cloud SQL ${SQL_INSTANCE} ya existe."
+    fi
+
+    # Memorystore Redis
+    if ! gcloud redis instances describe "${REDIS_INSTANCE}" \
+        --region="${REGION}" &>/dev/null 2>&1; then
+        log_info "Creando Memorystore Redis..."
+
+        gcloud redis instances create "${REDIS_INSTANCE}" \
+            --size=1 \
+            --region="${REGION}" \
+            --redis-version="redis_7_0" \
+            --tier="standard" \
+            --enable-auth \
+            --transit-encryption-mode="SERVER_AUTHENTICATION" \
+            --quiet
+
+        log_success "Memorystore Redis creado: ${REDIS_INSTANCE}"
+    else
+        log_warning "Redis ${REDIS_INSTANCE} ya existe."
+    fi
+}
+
+# ════════════════════════════════════════════════════════
+# PASO 9: VERIFICAR DESPLIEGUE
+# ════════════════════════════════════════════════════════
+
+verify_deployment() {
+    log_step "9/10 — Verificando Despliegue"
+
+    log_info "Esperando que los pods estén Ready (máx 10 minutos)..."
+
+    local services=(
+        "api-gateway"
+        "office1-estimator"
+        "office2-insurance"
+        "office3-totalloss"
+        "office4-lien"
+        "office5-audit"
+        "office6-cpo"
+        "office7-gpu"
+    )
+
+    for service in "${services[@]}"; do
+        if kubectl rollout status deployment/"${service}" \
+            --namespace="${NAMESPACE}" \
+            --timeout=600s; then
+            log_success "✓ ${service} — OPERACIONAL"
+        else
+            log_warning "⚠ ${service} — Verificar manualmente"
+        fi
+    done
+
+    # Obtener IP del LoadBalancer
+    log_info "Obteniendo IP del Ingress LoadBalancer..."
+    local EXTERNAL_IP=""
+    local attempts=0
+
+    while [[ -z "${EXTERNAL_IP}" && ${attempts} -lt 30 ]]; do
+        EXTERNAL_IP=$(kubectl get service ingress-nginx-controller \
+            --namespace=ingress-nginx \
+            --output=jsonpath='{.status.loadBalancer.ingress[0].ip}' \
+            2>/dev/null || echo "")
+        if [[ -z "${EXTERNAL_IP}" ]]; then
+            sleep 10
+            ((attempts++))
+        fi
+    done
+
+    echo ""
+    echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}  AXIOM ESTIMATE — DESPLIEGUE COMPLETADO            ${NC}"
+    echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
+    echo -e "  Cluster:       ${CLUSTER_NAME}"
+    echo -e "  Region:        ${REGION}"
+    echo -e "  Namespace:     ${NAMESPACE}"
+    echo -e "  LoadBalancer:  ${EXTERNAL_IP:-Pendiente de asignación}"
+    echo -e "  Admin Panel:   https://admin.axiomestimate.com"
+    echo -e "  Grafana:       https://monitor.axiomestimate.com"
+    echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
+}
+
+# ════════════════════════════════════════════════════════
+# PASO 10: CONFIGURAR DNS
+# ════════════════════════════════════════════════════════
+
+print_dns_instructions() {
+    log_step "10/10 — Instrucciones DNS"
+
+    local EXTERNAL_IP
+    EXTERNAL_IP=$(kubectl get service ingress-nginx-controller \
+        --namespace=ingress-nginx \
+        --output=jsonpath='{.status.loadBalancer.ingress[0].ip}' \
+        2>/dev/null || echo "PENDIENTE")
+
+    cat << EOF
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CONFIGURA ESTOS REGISTROS DNS EN TU PROVEEDOR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  En tu panel DNS (GoDaddy/Cloudflare/etc):
+
+  Tipo  | Nombre                    | Valor
+  ──────────────────────────────────────────────
+  A     | @                         | ${EXTERNAL_IP}
+  A     | admin                     | ${EXTERNAL_IP}
+  A     | api                       | ${EXTERNAL_IP}
+  A     | monitor                   | ${EXTERNAL_IP}
+  A     | office1                   | ${EXTERNAL_IP}
+  A     | office2                   | ${EXTERNAL_IP}
+  A     | office3                   | ${EXTERNAL_IP}
+  A     | office4                   | ${EXTERNAL_IP}
+  A     | office5                   | ${EXTERNAL_IP}
+  A     | office6                   | ${EXTERNAL_IP}
+  A     | office7                   | ${EXTERNAL_IP}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EOF
+}
+
+# ════════════════════════════════════════════════════════
+# MAIN — ORQUESTADOR PRINCIPAL
+# ════════════════════════════════════════════════════════
+
+main() {
+    echo ""
+    echo -e "${CYAN}"
+    cat << 'BANNER'
+    ╔═══════════════════════════════════════════════════╗
+    ║         AXIOM ESTIMATE — GKE AUTOPILOT            ║
+    ║         Deployment Orquestador v2.0.0             ║
+    ║         100+ Clientes | Producción 2026           ║
+    ╚═══════════════════════════════════════════════════╝
+BANNER
+    echo -e "${NC}"
+
+    check_prerequisites
+    load_env
+    setup_gcp_project
+    create_gke_cluster
+    setup_artifact_registry
+    build_and_push_images
+    setup_secret_manager
+    setup_managed_databases
+    apply_kubernetes_manifests
+    install_helm_charts
+    verify_deployment
+    print_dns_instructions
+
+    log_success "AXIOM ESTIMATE desplegado exitosamente en GKE Autopilot. 🚀"
+}
+
+main "$@"
