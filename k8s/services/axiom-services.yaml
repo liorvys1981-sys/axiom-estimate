@@ -1,0 +1,50 @@
+# k8s/services/axiom-services.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway-service
+  namespace: axiom-production
+  labels:
+    app: api-gateway
+spec:
+  selector:
+    app: api-gateway
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: office1-estimator-service
+  namespace: axiom-production
+  labels:
+    app: office1-estimator
+spec:
+  selector:
+    app: office1-estimator
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: office2-insurance-service
+  namespace: axiom-production
+  labels:
+    app: office2-insurance
+spec:
+  selector:
+    app: office2-insurance
+  ports:
+    - name: http
+      port: 8002
+      targetPort: 8002
+  type: ClusterIP

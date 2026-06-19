@@ -1,0 +1,63 @@
+# k8s/cronjobs/reporting-agent.yaml
+---
+# Daily executive report — 6:00 AM UTC (2 AM EST)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: axiom-reporting-agent
+  namespace: axiom-production
+  labels:
+    app: reporting-agent
+    component: automation
+spec:
+  schedule: "0 6 * * *"
+  timeZone: "America/New_York"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 3600
+
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: reporting-agent
+        spec:
+          serviceAccountName: axiom-service-account
+          restartPolicy: OnFailure
+
+          containers:
+            - name: reporting-agent
+              image: us-east1-docker.pkg.dev/axiom-estimate-prod/axiom/reporting-agent:latest
+              imagePullPolicy: Always
+
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "256Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
+
+              envFrom:
+                - configMapRef:
+                    name: axiom-global-config
+                - secretRef:
+                    name: axiom-runtime-secrets
+
+              env:
+                - name: REPORT_TYPE
+                  value: "daily_executive"
+                - name: REPORT_FORMAT
+                  value: "html"
+                - name: REPORT_TIMEZONE
+                  value: "America/New_York"
+
+              volumeMounts:
+                - name: tmp-dir
+                  mountPath: /tmp
+
+          volumes:
+            - name: tmp-dir
+              emptyDir: {}
