@@ -13,16 +13,17 @@ Autonomous automotive damage-estimation platform for independent repair shops in
 3. [Local development](#local-development)
 4. [Running tests](#running-tests)
 5. [Docker](#docker)
-6. [Kubernetes](#kubernetes)
-7. [Terraform](#terraform)
-8. [Deployment script](#deployment-script)
-9. [MVP vs Roadmap](#mvp-vs-roadmap)
+6. [Railway](#railway)
+7. [Kubernetes](#kubernetes)
+8. [Terraform](#terraform)
+9. [Deployment script](#deployment-script)
+10. [MVP vs Roadmap](#mvp-vs-roadmap)
 
 ---
 
 ## What is this?
 
-AXIOM ESTIMATE is a SaaS platform that automates the estimate-and-claims workflow for auto body shops.  A shop submits photos of a damaged vehicle; AXIOM's AI offices process the images, cross-reference insurance databases, compute total-loss thresholds (Florida statute §319.30), draft lien filings, and return a complete estimate — autonomously, in minutes.
+AXIOM ESTIMATE is a SaaS platform that automates the estimate-and-claims workflow for auto body shops. A shop submits photos of a damaged vehicle; AXIOM's AI offices process the images, cross-reference parts/pricing, validate insurance requirements, and return a structured repair estimate.
 
 **Pricing model** — monthly subscription ($99/shop) plus per-job fees per AI office:
 
@@ -107,7 +108,7 @@ Interactive docs: <http://localhost:8000/docs>
 
 ### Environment variables
 
-All settings have safe defaults for local development.  Copy `.env.example` (coming soon) or export variables directly:
+All settings have safe defaults for local development. Copy `.env.example` (coming soon) or export variables directly:
 
 ```bash
 export APP_ENV=development
@@ -151,6 +152,36 @@ docker compose up --build
 ```
 
 The API gateway starts on port 8000 with live-reload volume-mounted source.
+
+---
+
+## Railway
+
+This repository can be deployed directly on Railway using the included `Dockerfile`.
+
+### Required variables
+
+Set these variables in the Railway service:
+
+```bash
+APP_ENV=production
+LOG_LEVEL=INFO
+SERVICE_NAME=api-gateway
+JWT_SECRET_KEY=replace-with-a-secure-random-secret
+```
+
+### Port binding
+
+The container startup command supports Railway's dynamic `PORT` variable automatically and falls back to port `8000` for local Docker runs.
+
+### Health check
+
+After deployment, verify these endpoints:
+
+- `/`
+- `/docs`
+- `/health/live`
+- `/health/ready`
 
 ---
 
@@ -213,7 +244,7 @@ terraform plan -var="project_id=axiom-estimate-prod"
 terraform apply -var="project_id=axiom-estimate-prod"
 ```
 
-> **Note:** `project_id` has no default to avoid accidental deploys.  Always pass it explicitly or set `TF_VAR_project_id`.
+> **Note:** `project_id` has no default to avoid accidental deploys. Always pass it explicitly or set `TF_VAR_project_id`.
 
 Provisioned resources: GKE Autopilot cluster, Cloud SQL PostgreSQL 15, Memorystore Redis 7, Artifact Registry.
 
@@ -259,5 +290,3 @@ The script will:
 - Frontend dashboard
 - Canary deployment strategy
 - Full observability stack (Grafana dashboards)
-
-
