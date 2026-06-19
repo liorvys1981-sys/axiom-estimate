@@ -1,0 +1,47 @@
+# k8s/configmaps/axiom-config.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: axiom-global-config
+  namespace: axiom-production
+  labels:
+    app: axiom-estimate
+data:
+  APP_NAME: "AXIOM ESTIMATE"
+  APP_VERSION: "2.0.0"
+  APP_ENV: "production"
+  LOG_LEVEL: "INFO"
+
+  # Internal service URLs
+  API_GATEWAY_URL: "http://api-gateway-service:8000"
+  OFFICE1_URL: "http://office1-estimator-service:8001"
+  OFFICE2_URL: "http://office2-insurance-service:8002"
+
+  # Pricing (USD)
+  BASE_SUBSCRIPTION_PRICE: "99.00"
+  OFFICE1_JOB_PRICE: "9.00"
+  OFFICE2_JOB_PRICE: "13.00"
+
+  # Email
+  SUPPORT_EMAIL: "support@axiomestimate.com"
+  NOREPLY_EMAIL: "noreply@axiomestimate.com"
+  SMTP_HOST: "smtp.gmail.com"
+  SMTP_PORT: "587"
+  SMTP_USE_TLS: "true"
+
+  # Florida legal thresholds
+  FL_TOTAL_LOSS_THRESHOLD: "0.80"
+  FL_STATUTE_TOTAL_LOSS: "319.30"
+  FL_STATUTE_LIEN_REPAIR: "713.58"
+  FL_STATUTE_LIEN_TOW: "713.78"
+  DEFAULT_STATE: "FL"
+
+  # Performance / SLA
+  HEALTH_CHECK_INTERVAL_SECONDS: "30"
+  TARGET_AUTONOMY_PCT: "99.9"
+
+  # GKE
+  CLOUD_PROVIDER: "gcp"
+  GCP_REGION: "us-east1"
+  K8S_NAMESPACE: "axiom-production"

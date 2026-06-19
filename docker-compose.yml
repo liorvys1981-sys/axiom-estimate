@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: axiom-api-gateway:dev
+    container_name: axiom-api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: development
+      LOG_LEVEL: DEBUG
+      SERVICE_NAME: api-gateway
+      # Override DATABASE_URL for local dev (no external DB required for MVP)
+      DATABASE_URL: sqlite:///./axiom_dev.db
+      JWT_SECRET_KEY: local-dev-secret-change-me
+    volumes:
+      - ./app:/app/app  # Live reload in development
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s

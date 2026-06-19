@@ -1,3 +1,0 @@
-1. Ve a netlify.com
-2. Arrastra el archivo index.html
-3. ¡Listo! URL pública instantánea

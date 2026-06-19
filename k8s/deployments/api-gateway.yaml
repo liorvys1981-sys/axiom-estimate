@@ -1,0 +1,154 @@
+# k8s/deployments/api-gateway.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: axiom-production
+  labels:
+    app: api-gateway
+    component: core
+    version: "2.0.0"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: api-gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+        component: core
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: axiom-service-account
+
+      initContainers:
+        - name: secrets-validator
+          image: python:3.11-alpine
+          command:
+            - python3
+            - -c
+            - |
+              import os, sys
+              required = ['DATABASE_URL', 'JWT_SECRET_KEY', 'STRIPE_SECRET_KEY', 'REDIS_URL']
+              missing = [k for k in required if not os.environ.get(k) or os.environ[k] == 'INJECTED_BY_SECRET_MANAGER']
+              if missing:
+                print(f"FAIL: Missing or uninjected secrets: {missing}")
+                sys.exit(1)
+              print("GREEN LIGHT: All secrets present")
+          envFrom:
+            - secretRef:
+                name: axiom-runtime-secrets
+
+      containers:
+        - name: api-gateway
+          image: us-east1-docker.pkg.dev/axiom-estimate-prod/axiom/api-gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+              ephemeral-storage: "1Gi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+              ephemeral-storage: "2Gi"
+
+          envFrom:
+            - configMapRef:
+                name: axiom-global-config
+            - secretRef:
+                name: axiom-runtime-secrets
+
+          env:
+            - name: SERVICE_NAME
+              value: "api-gateway"
+            - name: SERVICE_PORT
+              value: "8000"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30
+
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+            - name: app-logs
+              mountPath: /app/logs
+
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
+        - name: app-logs
+          emptyDir: {}
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values: ["api-gateway"]
+                topologyKey: kubernetes.io/hostname
+
+      terminationGracePeriodSeconds: 30

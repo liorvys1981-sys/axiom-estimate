@@ -1,0 +1,91 @@
+# k8s/deployments/office2-insurance.yaml
+# Office 2 — Insurance Claims ($13/job)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: office2-insurance
+  namespace: axiom-production
+  labels:
+    app: office2-insurance
+    component: office
+    office: "2"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: office2-insurance
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: office2-insurance
+        component: office
+        office: "2"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8002"
+    spec:
+      serviceAccountName: axiom-service-account
+      containers:
+        - name: office2-insurance
+          image: us-east1-docker.pkg.dev/axiom-estimate-prod/axiom/office2-insurance:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8002
+              name: http
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+
+          envFrom:
+            - configMapRef:
+                name: axiom-global-config
+            - secretRef:
+                name: axiom-runtime-secrets
+
+          env:
+            - name: SERVICE_NAME
+              value: "office2-insurance-claims"
+            - name: SERVICE_PORT
+              value: "8002"
+            - name: OFFICE_ID
+              value: "2"
+            - name: JOB_PRICE
+              value: "13.00"
+
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8002
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8002
+            initialDelaySeconds: 15
+            periodSeconds: 5
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}

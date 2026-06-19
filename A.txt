@@ -1,5 +1,0 @@
-1. Ve a github.com → New Repository
-2. Nombre: axiom-estimate
-3. Sube el index.html
-4. Settings → Pages → Branch: main
-5. URL: tuusuario.github.io/axiom-estimate

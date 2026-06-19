@@ -1,0 +1,118 @@
+# k8s/monitoring/axiom-monitoring.yaml
+# Requires: Prometheus Operator (kube-prometheus-stack) installed in the cluster.
+# Install: helm install prometheus-stack prometheus-community/kube-prometheus-stack
+#
+# Note on ServiceMonitor selector:
+#   Each service that should be scraped by Prometheus must have the label
+#   "app: <service-name>".  The ServiceMonitor below uses a namespace-wide
+#   selector that picks up all services with the prometheus.io/scrape annotation.
+#   Alternatively, deploy separate ServiceMonitors per service.
+---
+# ServiceMonitor — scrape all services that expose /metrics in this namespace
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: axiom-service-monitor
+  namespace: axiom-production
+  labels:
+    # Must match the Prometheus Operator's serviceMonitorSelector
+    release: prometheus-stack
+spec:
+  # Select services by namespace only; each service must expose port "http"
+  namespaceSelector:
+    matchNames:
+      - axiom-production
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - api-gateway
+          - office1-estimator
+          - office2-insurance
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+# PrometheusRule — critical alert definitions
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: axiom-alerts
+  namespace: axiom-production
+  labels:
+    release: prometheus-stack
+spec:
+  groups:
+    - name: axiom.critical
+      interval: 30s
+      rules:
+        - alert: AXIOMPodDown
+          expr: |
+            kube_deployment_status_replicas_available{namespace="axiom-production"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            team: axiom
+          annotations:
+            summary: "CRITICAL: AXIOM pod down"
+            description: >
+              Deployment {{ $labels.deployment }} has 0 available replicas.
+
+        - alert: AXIOMHighCPU
+          expr: |
+            rate(container_cpu_usage_seconds_total{namespace="axiom-production"}[5m]) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High CPU on {{ $labels.pod }}"
+
+        - alert: AXIOMHighErrorRate
+          expr: |
+            rate(http_requests_total{namespace="axiom-production",status=~"5.."}[5m]) > 0.05
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Error rate >5% in AXIOM"
+---
+# PodDisruptionBudget — api-gateway
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pdb-api-gateway
+  namespace: axiom-production
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+---
+# PodDisruptionBudget — office1
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pdb-office1
+  namespace: axiom-production
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: office1-estimator
+---
+# PodDisruptionBudget — office2
+# Fixed: was using "component: office" which did not match deployment labels.
+# Now uses explicit app label for consistency.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pdb-office2
+  namespace: axiom-production
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: office2-insurance

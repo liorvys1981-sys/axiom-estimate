@@ -1,0 +1,90 @@
+# k8s/namespace.yaml
+# Namespace and cluster-wide RBAC for AXIOM ESTIMATE
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: axiom-production
+  labels:
+    app: axiom-estimate
+    env: production
+    managed-by: axiom-team
+---
+# ServiceAccount with Workload Identity for Secret Manager access
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: axiom-service-account
+  namespace: axiom-production
+  annotations:
+    iam.gke.io/gcp-service-account: axiom-gke-sa@axiom-estimate-prod.iam.gserviceaccount.com
+---
+# Role: scoped permissions within the namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: axiom-pod-manager
+  namespace: axiom-production
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "endpoints"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: axiom-pod-manager-binding
+  namespace: axiom-production
+subjects:
+  - kind: ServiceAccount
+    name: axiom-service-account
+    namespace: axiom-production
+roleRef:
+  kind: Role
+  # Fixed: was "apiRef" (invalid field), correct field is "name"
+  name: axiom-pod-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+# ResourceQuota — guard against runaway costs
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: axiom-resource-quota
+  namespace: axiom-production
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: "40Gi"
+    limits.cpu: "40"
+    limits.memory: "80Gi"
+    pods: "100"
+    services: "20"
+    persistentvolumeclaims: "10"
+---
+# LimitRange — default limits per container
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: axiom-limit-range
+  namespace: axiom-production
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "128Mi"
+      max:
+        cpu: "4"
+        memory: "8Gi"
+      min:
+        cpu: "50m"
+        memory: "64Mi"
