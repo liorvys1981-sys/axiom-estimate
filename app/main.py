@@ -10,25 +10,46 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import estimates, health
 from app.core import health as health_state
-from app.core.config import get_settings
+from app.core.config import configure_logging, get_settings
+from app.db.session import check_db_connection, init_db
 
 settings = get_settings()
 
-logging.basicConfig(
-    level=getattr(logging, settings.log_level.upper(), logging.INFO),
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-)
+# Configure structured logging before anything else runs
+configure_logging(settings)
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup → yield → shutdown."""
-    logger.info("Starting %s v%s [%s]", settings.app_name, settings.app_version, settings.app_env)
+    logger.info(
+        "Starting %s v%s [env=%s]",
+        settings.app_name,
+        settings.app_version,
+        settings.app_env,
+    )
+
+    # ── Database initialisation ──────────────────────────────────────────
+    if check_db_connection():
+        logger.info("Database connection verified (%s)", settings.database_url.split("@")[-1])
+        init_db()
+    else:
+        logger.error(
+            "Cannot reach database at startup — service will start but persistence "
+            "is unavailable until the database becomes reachable."
+        )
+
     health_state.mark_ready()
     logger.info("Service ready — %s", settings.service_name)
+
     yield
-    logger.info("Shutting down %s", settings.service_name)
+
+    # ── Graceful shutdown ────────────────────────────────────────────────
+    logger.info("Shutting down %s — disposing connection pool…", settings.service_name)
+    from app.db.session import engine
+    engine.dispose()
+    logger.info("Connection pool disposed. Goodbye.")
 
 
 app = FastAPI(
