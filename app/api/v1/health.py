@@ -9,6 +9,12 @@ router = APIRouter(prefix="/health", tags=["health"])
 settings = get_settings()
 
 
+@router.get("")
+async def health():
+    """Railway healthcheck — returns 200 when the service is up."""
+    return {"status": "ok", "service": settings.service_name}
+
+
 @router.get("/live")
 async def liveness():
     """Kubernetes liveness probe — returns 200 while process is alive."""
