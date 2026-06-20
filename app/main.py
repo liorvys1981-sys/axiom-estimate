@@ -83,32 +83,31 @@ async def metrics_and_logging_middleware(request: Request, call_next):
     start = time.perf_counter()
     try:
         response = await call_next(request)
+        latency = time.perf_counter() - start
+        path = request.url.path
+        status_code = response.status_code
+
+        metrics_state.record_request(request.method, path, status_code, latency)
+
+        if path not in _SILENT_PATHS:
+            logger.info(
+                "request completed",
+                extra={
+                    "method": request.method,
+                    "path": path,
+                    "status_code": status_code,
+                    "latency_ms": round(latency * 1000, 2),
+                    "request_id": req_id,
+                },
+            )
+
+        return response
     except Exception:
         latency = time.perf_counter() - start
         metrics_state.record_request(request.method, request.url.path, 500, latency)
         raise
     finally:
         request_id_var.reset(token)
-
-    latency = time.perf_counter() - start
-    path = request.url.path
-    status_code = response.status_code
-
-    metrics_state.record_request(request.method, path, status_code, latency)
-
-    if path not in _SILENT_PATHS:
-        logger.info(
-            "request completed",
-            extra={
-                "method": request.method,
-                "path": path,
-                "status_code": status_code,
-                "latency_ms": round(latency * 1000, 2),
-                "request_id": req_id,
-            },
-        )
-
-    return response
 
 
 # ── Routers ───────────────────────────────────────────────────────────────────

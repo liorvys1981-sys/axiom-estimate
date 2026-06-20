@@ -16,6 +16,13 @@ def client():
         yield c
 
 
+@pytest.fixture(autouse=True)
+def reset_metrics_state():
+    metrics_state.reset_metrics_state()
+    yield
+    metrics_state.reset_metrics_state()
+
+
 # ---------------------------------------------------------------------------
 # GET /metrics  (Prometheus text exposition)
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ Tests for health-check endpoints.
 
 Run with:  pytest tests/ -v
 """
+import os
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
@@ -89,3 +90,19 @@ class TestStartup:
         resp = client.get("/health/startup")
         assert resp.status_code == 200
         assert resp.json()["status"] == "started"
+
+
+class TestDatabaseCheck:
+    def test_non_sqlite_db_without_sqlalchemy_is_not_ready(self):
+        original = os.environ.get("DATABASE_URL")
+        os.environ["DATABASE_URL"] = "postgresql://localhost:5432/axiom"
+        try:
+            result = health_state.check_database()
+        finally:
+            if original is None:
+                os.environ.pop("DATABASE_URL", None)
+            else:
+                os.environ["DATABASE_URL"] = original
+
+        assert result["ok"] is False
+        assert "sqlalchemy not installed" in result["detail"]
