@@ -46,7 +46,7 @@ app = FastAPI(
 # CORS — tighten origins in production via environment
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if not settings.is_production else ["https://axiomestimate.com"],
+    allow_origins=["*"] if not settings.is_production else ["https://axiomestimate.com", "https://www.axiomestimate.com"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
