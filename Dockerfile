@@ -1,5 +1,9 @@
+# ─── Build arguments ──────────────────────────────────────────────────────────
+ARG PYTHON_VERSION=3.11
+ARG APP_VERSION=2.0.0
+
 # ─── Build stage ──────────────────────────────────────────────────────────────
-FROM python:3.11-slim AS builder
+FROM python:${PYTHON_VERSION}-slim AS builder
 
 WORKDIR /build
 
@@ -8,7 +12,14 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ─── Runtime stage ─────────────────────────────────────────────────────────────
-FROM python:3.11-slim
+FROM python:${PYTHON_VERSION}-slim
+
+# Image metadata
+LABEL maintainer="axiom-team"
+LABEL version="${APP_VERSION}"
+LABEL description="AXIOM ESTIMATE API Gateway - Autonomous automotive damage estimation"
+LABEL org.opencontainers.image.source="https://github.com/liorvys1981-sys/axiom-estimate"
+LABEL org.opencontainers.image.licenses="Proprietary"
 
 # Non-root user (matches securityContext in k8s manifests)
 RUN useradd --uid 1000 --create-home appuser
