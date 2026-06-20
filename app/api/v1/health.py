@@ -11,7 +11,7 @@ settings = get_settings()
 
 @router.get("")
 async def health():
-    """Railway health check — returns 200 OK."""
+    """Railway health check — returns 200 OK while the service is running."""
     return {"status": "ok"}
 
 
