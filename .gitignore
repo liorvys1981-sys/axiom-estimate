@@ -39,7 +39,11 @@ htmlcov/
 
 # SQLite (local dev DB only)
 *.db
+*.sqlite
 *.sqlite3
+
+# Alembic
+alembic/versions/*.pyc
 
 # Docker
 *.log
