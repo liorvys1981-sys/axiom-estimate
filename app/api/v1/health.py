@@ -12,8 +12,15 @@ router = APIRouter(prefix="/health", tags=["health"])
 settings = get_settings()
 
 
+<<<<<<< HEAD
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+=======
+@router.get("")
+async def health():
+    """Railway health check — returns 200 OK while the service is running."""
+    return {"status": "ok"}
+>>>>>>> origin/main
 
 
 @router.get("/live")

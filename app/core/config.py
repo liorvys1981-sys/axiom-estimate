@@ -9,6 +9,12 @@ from typing import Any
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Minimum acceptable length for JWT secret keys.
+_JWT_SECRET_MIN_LENGTH = 32
+
+# Default allowed origins for CORS when ALLOWED_ORIGINS is not set.
+_DEFAULT_ALLOWED_ORIGINS = ["https://axiom-estimate-production.up.railway.app"]
+
 
 _INSECURE_SECRET = "dev-insecure-change-me"
 
@@ -41,6 +47,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = Field(60, alias="JWT_EXPIRE_MINUTES")
 
+<<<<<<< HEAD
     # ── CORS ──────────────────────────────────────────────────────────────────
     cors_origins: list[str] = Field(
         default=["http://localhost:3000", "http://localhost:8000"],
@@ -80,12 +87,28 @@ class Settings(BaseSettings):
         return self
 
     # ── Derived properties ────────────────────────────────────────────────────
+=======
+    # CORS — comma-separated list of allowed origins, e.g.:
+    #   ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
+    _allowed_origins_raw: str = os.getenv("ALLOWED_ORIGINS", "")
+
+    # Feature flags
+    guardian_enabled: bool = os.getenv("GUARDIAN_ENABLED", "false").lower() == "true"
+>>>>>>> origin/main
+
+    def __init__(self) -> None:
+        self._validate_secrets()
+
+    # ------------------------------------------------------------------
+    # Derived properties
+    # ------------------------------------------------------------------
 
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
 
     @property
+<<<<<<< HEAD
     def is_development(self) -> bool:
         return self.app_env == "development"
 
@@ -130,6 +153,53 @@ class Settings(BaseSettings):
                 format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
             )
         logging.root.setLevel(self.log_level)
+=======
+    def allowed_origins(self) -> list[str]:
+        """Return the list of CORS-allowed origins.
+
+        Reads ALLOWED_ORIGINS (comma-separated).  Falls back to the
+        production default when the variable is absent or empty.
+        """
+        raw = self._allowed_origins_raw.strip()
+        if raw:
+            return [origin.strip() for origin in raw.split(",") if origin.strip()]
+        return _DEFAULT_ALLOWED_ORIGINS
+
+    # ------------------------------------------------------------------
+    # Secrets validation
+    # ------------------------------------------------------------------
+
+    def _validate_secrets(self) -> None:
+        """Enforce critical secret constraints in production.
+
+        Raises ``ValueError`` at startup if any required secret is
+        missing or insecure so that a misconfigured deploy fails fast
+        rather than running with unsafe defaults.
+        """
+        if not self.is_production:
+            return
+
+        errors: list[str] = []
+
+        # JWT secret must be present and long enough to be secure.
+        if not self.jwt_secret_key or len(self.jwt_secret_key) < _JWT_SECRET_MIN_LENGTH:
+            errors.append(
+                f"JWT_SECRET_KEY must be at least {_JWT_SECRET_MIN_LENGTH} characters "
+                f"in production (got {len(self.jwt_secret_key or '')} chars)."
+            )
+
+        # DATABASE_URL must be set to a real database, not the dev SQLite fallback.
+        if not self.database_url or self.database_url.startswith("sqlite"):
+            errors.append(
+                "DATABASE_URL must be set to a non-SQLite database URL in production."
+            )
+
+        if errors:
+            raise ValueError(
+                "Production secrets validation failed:\n"
+                + "\n".join(f"  • {e}" for e in errors)
+            )
+>>>>>>> origin/main
 
 
 @lru_cache()

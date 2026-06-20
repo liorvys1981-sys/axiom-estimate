@@ -5,7 +5,7 @@ FastAPI application entry-point.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import estimates, health, metrics
@@ -69,6 +69,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+<<<<<<< HEAD
 # ── Middleware (applied in reverse order — last added = outermost) ─────────────
 # 1. Error handler — must be outermost so it catches errors from all layers.
 app.add_middleware(ErrorHandlingMiddleware)
@@ -80,12 +81,40 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.effective_cors_origins,
+=======
+# ---------------------------------------------------------------------------
+# CORS — origins driven by ALLOWED_ORIGINS env var in production
+# ---------------------------------------------------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins,
+>>>>>>> origin/main
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+<<<<<<< HEAD
 # ── Routers ───────────────────────────────────────────────────────────────────
+=======
+
+# ---------------------------------------------------------------------------
+# Security headers middleware
+# ---------------------------------------------------------------------------
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next) -> Response:
+    """Attach security headers to every HTTP response."""
+    response: Response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    return response
+
+
+# Routers
+>>>>>>> origin/main
 app.include_router(health.router)
 app.include_router(metrics.router)
 app.include_router(estimates.router)
