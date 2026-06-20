@@ -8,11 +8,10 @@ StaticPool to avoid cross-thread issues in tests.
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
 from typing import Generator
 
 from sqlalchemy import create_engine, event, text
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import get_settings
