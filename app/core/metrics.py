@@ -157,3 +157,11 @@ def p99_latency_seconds() -> float:
     all_samples.sort()
     idx = max(0, int(len(all_samples) * 0.99) - 1)
     return all_samples[idx]
+
+
+def reset_metrics_state() -> None:
+    """Clear all in-memory metrics (test helper)."""
+    with _lock:
+        _request_counts.clear()
+        _error_counts.clear()
+        _latency_samples.clear()

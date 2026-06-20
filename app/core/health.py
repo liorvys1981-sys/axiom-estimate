@@ -103,10 +103,10 @@ def check_database() -> Dict[str, Any]:
                     conn.execute(text("SELECT 1"))
                 engine.dispose()
             except ImportError:
-                # SQLAlchemy not installed — skip the deep check
+                # SQLAlchemy not installed — cannot verify non-sqlite DBs.
                 return {
-                    "ok": True,
-                    "detail": "sqlalchemy not installed; skipping deep DB check",
+                    "ok": False,
+                    "detail": "sqlalchemy not installed; cannot verify non-sqlite database connectivity",
                     "url_set": url_set,
                 }
 
@@ -115,4 +115,3 @@ def check_database() -> Dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Database health check failed: %s", exc)
         return {"ok": False, "detail": str(exc), "url_set": url_set}
-
