@@ -5,7 +5,7 @@ FastAPI application entry-point.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import estimates, health
@@ -43,14 +43,32 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — tighten origins in production via environment
+# ---------------------------------------------------------------------------
+# CORS — origins driven by ALLOWED_ORIGINS env var in production
+# ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if not settings.is_production else ["https://axiomestimate.com"],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Security headers middleware
+# ---------------------------------------------------------------------------
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next) -> Response:
+    """Attach security headers to every HTTP response."""
+    response: Response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    return response
+
 
 # Routers
 app.include_router(health.router)
